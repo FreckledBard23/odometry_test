@@ -23,8 +23,8 @@ import random
 
 pygame.init()
 
-screen_size = 400
-size = (screen_size, screen_size)
+screen_size = 600
+size = (screen_size * 1.5, screen_size)
 screen = pygame.display.set_mode(size)
 
 pygame.display.set_caption("FTC Test")
@@ -68,11 +68,60 @@ def draw_robot_outline(x, y, rotation, color):
 def rotate(x, y, rotation):
     return x * cos(rotation) - y * sin(rotation), x * sin(rotation) + y * cos(rotation)
 
+#I'm too lazy to learn how pygame fonts work, I'll tally the hours wasted here for number display
+# start time 5/22/2026 10:21 pm
+# 10:54 -> nvm took like 40 min 
+number_data = [[1, 1, 1, 1, 1, 1, 0],
+               [0, 1, 1, 0, 0, 0, 0],
+               [1, 1, 0, 1, 1, 0, 1],
+               [1, 1, 1, 1, 0, 0, 1],
+               [0, 1, 1, 0, 0, 1, 1],
+               [1, 0, 1, 1, 0, 1, 1],
+               [1, 0, 1, 1, 1, 1, 1],
+               [1, 1, 1, 0, 0, 0, 0],
+               [1, 1, 1, 1, 1, 1, 1],
+               [1, 1, 1, 0, 0, 1, 1],
+               [0, 0, 0, 0, 0, 0, 1], #minus sign
+               [0, 0, 0, 0, 0, 0, 0]] #interpeted as decimal point
+def display_digit(num, x, y, scale, thickness):
+    #seven seg thing
+    if number_data[num][0]:
+        pygame.draw.rect(screen, UI, ((x, y), (0.6 * scale, thickness)))
+    if number_data[num][6]:
+        pygame.draw.rect(screen, UI, ((x, y + scale * 0.5 - thickness * 0.5), (scale * 0.6, thickness)))
+    if number_data[num][3]:
+        pygame.draw.rect(screen, UI, ((x, y + scale - thickness), (0.6 * scale, thickness)))   
+    if number_data[num][5]:
+        pygame.draw.rect(screen, UI, ((x, y), (thickness, 0.5 * scale)))
+    if number_data[num][1]:
+        pygame.draw.rect(screen, UI, ((x + scale * 0.6 - thickness, y), (thickness, 0.5 * scale)))
+    if number_data[num][2]:
+        pygame.draw.rect(screen, UI, ((x + scale * 0.6 - thickness, y + 0.5 * scale), (thickness, 0.5 * scale)))
+    if number_data[num][4]:
+        pygame.draw.rect(screen, UI, ((x, y + 0.5 * scale), (thickness, 0.5 * scale)))
+    if num == 11:
+        pygame.draw.rect(screen, UI, ((x + scale * 0.3 - thickness * 0.5, y + scale - thickness), (thickness, thickness)))
+def display_number(num, x, y, scale, thickness):
+    string_num = str(num)
+
+    offset = 0
+    for digit in string_num:
+        if digit == '.':
+            display_digit(11, x + offset, y, scale, thickness)
+        elif digit == '-':
+            display_digit(10, x + offset, y, scale, thickness)
+        else:
+            display_digit(int(digit), x + offset, y, scale, thickness)
+        offset += scale * 0.65
+
 ROBOT = (0, 255, 0)
 TARGET = (0, 127, 255)
 STATION = (255, 127, 0)
 DEBUG = (255, 255, 0)
+UI = (255, 0, 0)
 
+
+# --------------- movement helper functions ----------------
 robot_x =   0
 robot_y =   0
 robot_rot = 0 #rotation
@@ -82,12 +131,17 @@ robot_oxt = 0 #odometry temporary x
 robot_oyt = 0 #odometry temporary y
 robot_tx  = 0 #target x relative to odometry info
 robot_ty  = 0 #^^     y ^^       ^^ ^^       ^^
+#no odometry rotation variable as it doesn't differ from what is actually happening. A simple PID controller or something else
+#  to directly move the turn the robot if the odometry says that it doesn't have the right angle would suffice for control
 
 robot_frame_ax = 0 #robot planned frame x movement (x dir is relative to heading)
 robot_frame_ay = 0
+robot_frame_arot = 0
 
-#no odometry rotation variable as it doesn't differ from what is actually happening. A simple PID controller or something else
-#  to directly move the turn the robot if the odometry says that it doesn't have the right angle would suffice for control
+speed = 0.05
+movement_moe = 0.026 #margin of error, has to be at least this close in x and y to register as at a station
+rotation_speed = 0.1
+rotation_moe = 0.06
 
 class station:
     x = 0
@@ -117,6 +171,7 @@ chosen_target = 0
 #  3 - do nothing, wait until new chosen_target set and restart by changing step to 0
 step = 0
 
+#move the global position of the robot in order to update screen visualization, not needed in physical implementation
 def handle_robot_pos_movement():
     global robot_x, robot_y
 
@@ -124,17 +179,93 @@ def handle_robot_pos_movement():
     robot_x = robot_x + dx
     robot_y = robot_y + dy
 
-speed = 0.05
-movement_moe = 0.026 #margin of error, has to be at least this close in x and y to register as at a station
-rotation_speed = 0.1
-rotation_moe = 0.06
+#purely used for the debug lines on the wheels
+#serves 0 other purpose
+wheel_visualization_pos = [0, 0, 0, 0]
+wheel_height = 0.08
+wheel_width = 0.06
+wheel_line_amount = 5
+
+#x and y are relative to the ui box on the right. x ranges from 0 - 0.5, y is 0 - 1
+#angle is if the wheel 'sub wheels' are mirrored, text above is where to put the speed text
+#wheel id is just for the 'animation'
+#
+# If this function breaks, give up
+# it is too complicated and too messy
+# go pray to the Machine Spirit and the Omnissiah and light some candles
+def draw_wheel(x, y, angle, speed, text_above, wheel_id):
+    pygame.draw.rect(screen, UI, ((screen_size * (1 + x), y * screen_size), (wheel_width * screen_size, wheel_height * screen_size)), 1)
+    
+    line_slope = 0.04
+    if angle == True:
+        line_slope = -line_slope
+    line_y = y + (wheel_visualization_pos[wheel_id] - floor(wheel_visualization_pos[wheel_id])) * wheel_height
+    for i in range(wheel_line_amount):
+        y_offset = (i / wheel_line_amount) * wheel_height
+        line_y_ = line_y + y_offset
+        
+        if line_y_ - y > wheel_height:
+            line_y_ -= wheel_height
+
+        #smart clamp the lines to be within the rectangle
+        if (line_y_ - y + line_slope) > wheel_height:
+            new_y_offset = (line_y_ - y + line_slope) - wheel_height
+            new_x_offset = wheel_width * (1 - (new_y_offset / line_slope))
+            pygame.draw.line(screen, UI, (screen_size * (1 + x),                     line_y_ * screen_size),
+                                         (screen_size * (1 + x + new_x_offset) - 1, (line_y_ - new_y_offset + line_slope) * screen_size - 1))
+            pygame.draw.line(screen, UI, (screen_size * (1 + x + new_x_offset),      y * screen_size),
+                                         (screen_size * (1 + x + wheel_width) - 1,  (y + new_y_offset) * screen_size))
+        elif (line_y_ - y + line_slope) < 0:
+            new_y_offset = (line_y_ - y + line_slope)
+            new_x_offset = wheel_width * (1 - (new_y_offset / line_slope))
+            pygame.draw.line(screen, UI, (screen_size * (1 + x),                     line_y_ * screen_size),
+                                         (screen_size * (1 + x + new_x_offset) - 1, (line_y_ - new_y_offset + line_slope) * screen_size))
+            pygame.draw.line(screen, UI, (screen_size * (1 + x + new_x_offset),     (y + wheel_height) * screen_size - 1),
+                                         (screen_size * (1 + x + wheel_width) - 1,  (y + new_y_offset + wheel_height) * screen_size))
+        else:
+            line_y_ *= screen_size
+            pygame.draw.line(screen, UI, (screen_size * (1 + x), line_y_), (screen_size * (1 + x + wheel_width) - 1, line_y_ + line_slope * screen_size))
+    
+    if not text_above:
+        display_number(speed / 0.1, (1 + x) * screen_size, (y - 0.06) * screen_size, screen_size / 40, screen_size / 200)
+    else: 
+        display_number(speed / 0.1, (1 + x) * screen_size, (y + wheel_height + 0.04) * screen_size - screen_size / 200, screen_size / 40, screen_size / 200)
+
+def draw_robot_motor_info():
+    pygame.draw.line(screen, UI, (screen_size, 0), (screen_size, screen_size))
+
+    pygame.draw.rect(screen, UI, ((screen_size * 1.15, 0.1 * screen_size), (0.2 * screen_size, 0.3 * screen_size)), 1)
+
+
+    speed_fl = robot_frame_ay - robot_frame_ax - robot_frame_arot
+    speed_fr = robot_frame_ay + robot_frame_ax + robot_frame_arot
+    speed_bl = robot_frame_ay + robot_frame_ax - robot_frame_arot
+    speed_br = robot_frame_ay - robot_frame_ax + robot_frame_arot
+
+    draw_wheel(0.15 - wheel_width - 0.01, 0.12, False, speed_fl, False, 0)
+    draw_wheel(0.15 - wheel_width - 0.01, 0.38 - wheel_height, True, speed_bl, True, 1)
+    draw_wheel(0.35 - (1 / (screen_size * 0.5)) + 0.01, 0.12, True, speed_fr, False, 2)
+    draw_wheel(0.35 - (1 / (screen_size * 0.5)) + 0.01, 0.38 - wheel_height, False, speed_br, True, 3)
+
+    wheel_visualization_pos[0] += speed_fl * 0.4
+    wheel_visualization_pos[1] += speed_bl * 0.4
+    wheel_visualization_pos[2] += speed_fr * 0.4
+    wheel_visualization_pos[3] += speed_br * 0.4
+
+
+
+
 while not quitting:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             quitting = True
     
-    #movement code
+    # ------------ movement code -------------
     
+    robot_frame_ax = 0
+    robot_frame_ay = 0
+    robot_frame_arot = 0
+        
     if step == 0:
         robot_oxt = robot_ox
         robot_oyt = robot_oy
@@ -145,9 +276,6 @@ while not quitting:
         robot_ty += robot_oyt
         step = 1
     elif step == 1:
-        robot_frame_ax = 0
-        robot_frame_ay = 0
-        
         #could replace with a straight line trajectory but this is easier
         if robot_ox < robot_tx - movement_moe:
             robot_frame_ax = speed
@@ -168,22 +296,34 @@ while not quitting:
         if robot_frame_ax == 0 and robot_frame_ay == 0:
             step = 2
     elif step == 2:
+        #if too far above or below target rotation, rotate in the rigt way to compensate
         if robot_rot < stations[chosen_target].rot - rotation_moe:
             robot_rot += rotation_speed
+            robot_frame_arot += speed
         elif robot_rot > stations[chosen_target].rot + rotation_moe:
             robot_rot -= rotation_speed
+            robot_frame_arot -= speed
         else:
             step = 3
     elif step == 3:
+        # choose new station, in this case, just select next one in list, loop if needed
         print("at station", chosen_target)
         chosen_target += 1
         if chosen_target == len(stations):
             chosen_target = 0
         step = 0
 
-    #rendering code
+
+
+
+
+
+
+    # --------------- rendering code -----------------
     screen.fill((0, 0, 0))
     
+    draw_robot_motor_info();
+
     draw_robot_outline(robot_x, robot_y, robot_rot, ROBOT)
     
     for i in range(len(stations)):
