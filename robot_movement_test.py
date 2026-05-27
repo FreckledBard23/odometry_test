@@ -16,6 +16,7 @@
 # this is the easiest for the sensor to implement as it saves on trig math + calculations, but more difficult to use
 #
 # Psudocode coming shortly
+# ^^ update, never
 
 import pygame
 from math import *
@@ -68,19 +69,56 @@ def draw_robot_outline(x, y, rotation, color):
 def rotate(x, y, rotation):
     return x * cos(rotation) - y * sin(rotation), x * sin(rotation) + y * cos(rotation)
 
+# y is height, z is depth
+scale_factor = 16
+def project_3d(x, y, z):
+    return (x * scale_factor / z, y * scale_factor / z)
+
+def center_on_screen(pt):
+    return (pt[0] * (screen_size / 2 / world_scale) + screen_size / 2, -pt[1] * (screen_size / 2 / world_scale) + screen_size / 2)
+
+#3d version :)
+camera_height = 15
+camera_y = 20
+camera_pitch_rot = -0.75
+
+def draw_border():
+    border_points = [(-10, -10), (10, -10), (10, 10), (-10, 10)]
+    screen_points = []
+    
+    for pt in border_points:
+        ny, nz = rotate(-camera_height, pt[1] + camera_y, camera_pitch_rot)
+        pt2 = project_3d(pt[0], ny, nz)
+        screen_points.append(center_on_screen(pt2))
+
+    pygame.draw.lines(screen, (255, 255, 255), True, screen_points)
+
+def draw_robot_outline(x, y, rotation, color):
+    outline_points = [(-0.5, -0.5), (-0.5, 0.5), (0, 0.8), (0.5, 0.5), (0.5, -0.5)]
+    screen_points = []
+    
+    for pt_raw in outline_points:
+        new_x, new_y = rotate(pt_raw[0], pt_raw[1], rotation)
+        pt = (new_x + x, new_y + y)
+        ny, nz = rotate(-camera_height, pt[1] + camera_y, camera_pitch_rot)
+        pt2 = project_3d(pt[0], ny, nz)
+        screen_points.append(center_on_screen(pt2))
+
+    pygame.draw.lines(screen, color, True, screen_points)
+
 #I'm too lazy to learn how pygame fonts work, I'll tally the hours wasted here for number display
 # start time 5/22/2026 10:21 pm
 # 10:54 -> nvm took like 40 min 
-number_data = [[1, 1, 1, 1, 1, 1, 0],
-               [0, 1, 1, 0, 0, 0, 0],
-               [1, 1, 0, 1, 1, 0, 1],
-               [1, 1, 1, 1, 0, 0, 1],
-               [0, 1, 1, 0, 0, 1, 1],
-               [1, 0, 1, 1, 0, 1, 1],
-               [1, 0, 1, 1, 1, 1, 1],
-               [1, 1, 1, 0, 0, 0, 0],
-               [1, 1, 1, 1, 1, 1, 1],
-               [1, 1, 1, 0, 0, 1, 1],
+number_data = [[1, 1, 1, 1, 1, 1, 0], #0
+               [0, 1, 1, 0, 0, 0, 0], #1
+               [1, 1, 0, 1, 1, 0, 1], #2
+               [1, 1, 1, 1, 0, 0, 1], #3
+               [0, 1, 1, 0, 0, 1, 1], #4
+               [1, 0, 1, 1, 0, 1, 1], #5
+               [1, 0, 1, 1, 1, 1, 1], #6
+               [1, 1, 1, 0, 0, 0, 0], #7
+               [1, 1, 1, 1, 1, 1, 1], #8
+               [1, 1, 1, 0, 0, 1, 1], #9
                [0, 0, 0, 0, 0, 0, 1], #minus sign
                [0, 0, 0, 0, 0, 0, 0]] #interpeted as decimal point
 def display_digit(num, x, y, scale, thickness):
@@ -237,10 +275,10 @@ def draw_robot_motor_info():
     pygame.draw.rect(screen, UI, ((screen_size * 1.15, 0.1 * screen_size), (0.2 * screen_size, 0.3 * screen_size)), 1)
 
 
-    speed_fl = robot_frame_ay - robot_frame_ax - robot_frame_arot
-    speed_fr = robot_frame_ay + robot_frame_ax + robot_frame_arot
-    speed_bl = robot_frame_ay + robot_frame_ax - robot_frame_arot
-    speed_br = robot_frame_ay - robot_frame_ax + robot_frame_arot
+    speed_fl = -robot_frame_ay - robot_frame_ax - robot_frame_arot
+    speed_fr = -robot_frame_ay + robot_frame_ax + robot_frame_arot
+    speed_bl = -robot_frame_ay + robot_frame_ax - robot_frame_arot
+    speed_br = -robot_frame_ay - robot_frame_ax + robot_frame_arot
 
     draw_wheel(0.15 - wheel_width - 0.01, 0.12, False, speed_fl, False, 0)
     draw_wheel(0.15 - wheel_width - 0.01, 0.38 - wheel_height, True, speed_bl, True, 1)
@@ -296,8 +334,8 @@ while not quitting:
         if robot_frame_ax == 0 and robot_frame_ay == 0:
             step = 2
     elif step == 2:
-        #if too far above or below target rotation, rotate in the rigt way to compensate
-        if robot_rot < stations[chosen_target].rot - rotation_moe:
+        #if too far above or below target rotation, rotate in the right way to compensate
+        if robot_rot < (robot_rot - stations[chosen_target].rot):
             robot_rot += rotation_speed
             robot_frame_arot += speed
         elif robot_rot > stations[chosen_target].rot + rotation_moe:
@@ -322,6 +360,8 @@ while not quitting:
     # --------------- rendering code -----------------
     screen.fill((0, 0, 0))
     
+    draw_border()
+
     draw_robot_motor_info();
 
     draw_robot_outline(robot_x, robot_y, robot_rot, ROBOT)
