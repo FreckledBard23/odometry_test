@@ -139,10 +139,11 @@ def display_digit(num, x, y, scale, thickness):
         pygame.draw.rect(screen, UI, ((x, y + 0.5 * scale), (thickness, 0.5 * scale)))
     if num == 11:
         pygame.draw.rect(screen, UI, ((x + scale * 0.3 - thickness * 0.5, y + scale - thickness), (thickness, thickness)))
-def display_number(num, x, y, scale, thickness):
+def display_number(num, x, y, scale, thickness, max_digits):
     string_num = str(num)
 
     offset = 0
+    digit_num = 0
     for digit in string_num:
         if digit == '.':
             display_digit(11, x + offset, y, scale, thickness)
@@ -151,6 +152,10 @@ def display_number(num, x, y, scale, thickness):
         else:
             display_digit(int(digit), x + offset, y, scale, thickness)
         offset += scale * 0.65
+
+        digit_num += 1
+        if digit_num == max_digits:
+            return
 
 ROBOT = (0, 255, 0)
 TARGET = (0, 127, 255)
@@ -180,6 +185,7 @@ speed = 0.05
 movement_moe = 0.026 #margin of error, has to be at least this close in x and y to register as at a station
 rotation_speed = 0.1
 rotation_moe = 0.06
+rotation_dir = 0
 
 class station:
     x = 0
@@ -265,9 +271,9 @@ def draw_wheel(x, y, angle, speed, text_above, wheel_id):
             pygame.draw.line(screen, UI, (screen_size * (1 + x), line_y_), (screen_size * (1 + x + wheel_width) - 1, line_y_ + line_slope * screen_size))
     
     if not text_above:
-        display_number(speed / 0.1, (1 + x) * screen_size, (y - 0.06) * screen_size, screen_size / 40, screen_size / 200)
+        display_number(speed / 0.1, (1 + x) * screen_size, (y - 0.06) * screen_size, screen_size / 40, screen_size / 200, 5)
     else: 
-        display_number(speed / 0.1, (1 + x) * screen_size, (y + wheel_height + 0.04) * screen_size - screen_size / 200, screen_size / 40, screen_size / 200)
+        display_number(speed / 0.1, (1 + x) * screen_size, (y + wheel_height + 0.04) * screen_size - screen_size / 200, screen_size / 40, screen_size / 200, 5)
 
 def draw_robot_motor_info():
     pygame.draw.line(screen, UI, (screen_size, 0), (screen_size, screen_size))
@@ -315,15 +321,26 @@ while not quitting:
         step = 1
     elif step == 1:
         #could replace with a straight line trajectory but this is easier
-        if robot_ox < robot_tx - movement_moe:
-            robot_frame_ax = speed
-        elif robot_ox > robot_tx + movement_moe:
-            robot_frame_ax = -speed
-        if robot_oy < robot_ty - movement_moe:
-            robot_frame_ay = speed
-        elif robot_oy > robot_ty + movement_moe:
-            robot_frame_ay = -speed
+        #if robot_ox < robot_tx - movement_moe:
+        #    robot_frame_ax = speed
+        #elif robot_ox > robot_tx + movement_moe:
+        #    robot_frame_ax = -speed
+        #if robot_oy < robot_ty - movement_moe:
+        #    robot_frame_ay = speed
+        #elif robot_oy > robot_ty + movement_moe:
+        #    robot_frame_ay = -speed
         
+        x_difference = robot_tx - robot_ox
+        y_difference = robot_ty - robot_oy
+        magnitude = sqrt(x_difference ** 2 + y_difference ** 2)
+        x_difference /= magnitude
+        y_difference /= magnitude
+    
+        if abs(robot_tx - robot_ox) > movement_moe:
+            robot_frame_ax = x_difference * speed
+        if abs(robot_ty - robot_oy) > movement_moe:
+            robot_frame_ay = y_difference * speed
+
         #simulate odometry changing as would happen during movement
         robot_ox += robot_frame_ax
         robot_oy += robot_frame_ay
@@ -334,15 +351,40 @@ while not quitting:
         if robot_frame_ax == 0 and robot_frame_ay == 0:
             step = 2
     elif step == 2:
-        #if too far above or below target rotation, rotate in the right way to compensate
-        if robot_rot < (robot_rot - stations[chosen_target].rot):
+        # if clockwise dist less than pi go clockwise, else ccw
+        if rotation_dir == 0:
+            if stations[chosen_target].rot > robot_rot:
+                clockwise_dist = stations[chosen_target].rot - robot_rot
+
+                print(clockwise_dist)
+
+                if clockwise_dist < pi:
+                    rotation_dir = 1
+                else:
+                    rotation_dir = 2
+            else:
+                counterclockwise_dist = robot_rot - stations[chosen_target].rot
+
+                if counterclockwise_dist < pi:
+                    rotation_dir = 2
+                else:
+                    rotation_dir = 1
+
+        if rotation_dir == 1:
             robot_rot += rotation_speed
             robot_frame_arot += speed
-        elif robot_rot > stations[chosen_target].rot + rotation_moe:
+            if robot_rot > 2 * pi:
+                robot_rot -= 2 * pi
+        elif rotation_dir == 2:
             robot_rot -= rotation_speed
             robot_frame_arot -= speed
-        else:
+            if robot_rot < 0:
+                robot_rot += 2 * pi
+        
+        if abs(robot_rot - stations[chosen_target].rot) < rotation_moe:
             step = 3
+
+
     elif step == 3:
         # choose new station, in this case, just select next one in list, loop if needed
         print("at station", chosen_target)
@@ -350,6 +392,7 @@ while not quitting:
         if chosen_target == len(stations):
             chosen_target = 0
         step = 0
+        rotation_dir = 0
 
 
 
