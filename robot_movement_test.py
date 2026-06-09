@@ -77,20 +77,109 @@ def project_3d(x, y, z):
 def center_on_screen(pt):
     return (pt[0] * (screen_size / 2 / world_scale) + screen_size / 2, -pt[1] * (screen_size / 2 / world_scale) + screen_size / 2)
 
-#3d version :)
-camera_height = 15
-camera_y = 20
-camera_pitch_rot = -0.75
+camera_rot = 0 #rotation of board
+
+#there are 2 set positions for the camera - overhead (top) and at an angle (rest)
+camera_y_rest = 20
+camera_pitch_rot_rest = -0.75
+camera_height_rest = 15
+camera_y_top = 0
+camera_pitch_rot_top = -pi / 2
+camera_height_top = 30
+camera_y = camera_y_rest
+camera_pitch_rot = camera_pitch_rot_rest
+camera_height = camera_height_rest
+
+def draw_line_on_board(x1, y1, x2, y2, color):
+    nx1, ny1 = rotate(x1, y1, camera_rot)
+    nx2, ny2 = rotate(x2, y2, camera_rot)
+    ny1, nz1 = rotate(-camera_height, ny1 + camera_y, camera_pitch_rot)
+    ny2, nz2 = rotate(-camera_height, ny2 + camera_y, camera_pitch_rot)
+    pt1 = project_3d(nx1, ny1, nz1)
+    pt2 = project_3d(nx2, ny2, nz2)
+    pygame.draw.line(screen, color, center_on_screen(pt1), center_on_screen(pt2))
+
+class obstruction:
+    x = 0
+    y = 0
+    rot = 0
+    width = 1
+    depth = 1
+    height = 1
+
+    def get_verticies(self): #coordinates of all points in the base of the rectangular prism
+        raw_points = [(-self.width / 2, -self.height / 2), (-self.width / 2, self.height / 2), (self.width / 2, self.height / 2), (self.width / 2, -self.height / 2)]
+        pts = []
+        for i in range(4):
+            rotated_x, rotated_y = rotate(raw_points[i][0], raw_points[i][1], self.rot)
+            pts.append((rotated_x + self.x, rotated_y + self.y))
+
+        return pts
+
+    def draw(self):
+        verticies = self.get_verticies()
+        lower_screen_points = []
+        upper_screen_points = []
+
+        for vertex in verticies:
+            nx, ny = rotate(vertex[0], vertex[1], camera_rot)
+            ny, nz = rotate(-camera_height, ny + camera_y, camera_pitch_rot)
+            projection = project_3d(nx, ny, nz)
+            lower_screen_points.append(center_on_screen(projection))
+    
+        for vertex in verticies:
+            nx, ny = rotate(vertex[0], vertex[1], camera_rot)
+            ny, nz = rotate(-camera_height + self.depth, ny + camera_y, camera_pitch_rot)
+            projection = project_3d(nx, ny, nz)
+            upper_screen_points.append(center_on_screen(projection))
+    
+        for i in range(len(lower_screen_points)):
+            pygame.draw.line(screen, (255, 0, 255), upper_screen_points[i], upper_screen_points[(i + 1) % len(upper_screen_points)], 1)
+        
+        for i in range(len(lower_screen_points)):
+            pygame.draw.line(screen, (255, 0, 255), lower_screen_points[i], lower_screen_points[(i + 1) % len(lower_screen_points)], 1)
+            pygame.draw.line(screen, (255, 0, 255), lower_screen_points[i], upper_screen_points[i], 1)
+            pygame.draw.line(screen, (255, 0, 255), lower_screen_points[(i + 1) % len(lower_screen_points)],
+                                                    upper_screen_points[(i + 1) % len(lower_screen_points)], 1)
 
 def draw_border():
-    border_points = [(-10, -10), (10, -10), (10, 10), (-10, 10)]
+    border_points = [(-world_scale, -world_scale), (world_scale, -world_scale), (world_scale, world_scale), (-world_scale, world_scale)]
     screen_points = []
     
     for pt in border_points:
-        ny, nz = rotate(-camera_height, pt[1] + camera_y, camera_pitch_rot)
-        pt2 = project_3d(pt[0], ny, nz)
+        nx, ny = rotate(pt[0], pt[1], camera_rot)
+        ny, nz = rotate(-camera_height, ny + camera_y, camera_pitch_rot)
+        pt2 = project_3d(nx, ny, nz)
         screen_points.append(center_on_screen(pt2))
 
+    color = (80, 80, 80)
+    color_bright = (160, 160, 160)
+    for i in range(-world_scale + 1, world_scale):
+        nx1, ny1 = rotate(i, world_scale + ((i == 0) * 0.2 * world_scale), camera_rot)
+        ny1, nz1 = rotate(-camera_height, ny1 + camera_y, camera_pitch_rot)
+        pt1 = project_3d(nx1, ny1, nz1)
+        nx2, ny2 = rotate(i, -world_scale, camera_rot)
+        ny2, nz2 = rotate(-camera_height, ny2 + camera_y, camera_pitch_rot)
+        pt2 = project_3d(nx2, ny2, nz2)
+
+        if i != 0:
+            pygame.draw.line(screen, color, center_on_screen(pt1), center_on_screen(pt2))
+        else:
+            pygame.draw.line(screen, color_bright, center_on_screen(pt1), center_on_screen(pt2))
+    
+    for i in range(-world_scale + 1, world_scale):
+        nx1, ny1 = rotate(world_scale + ((i == 0) * 0.2 * world_scale), i, camera_rot)
+        ny1, nz1 = rotate(-camera_height, ny1 + camera_y, camera_pitch_rot)
+        pt1 = project_3d(nx1, ny1, nz1)
+        nx2, ny2 = rotate(-world_scale, i, camera_rot)
+        ny2, nz2 = rotate(-camera_height, ny2 + camera_y, camera_pitch_rot)
+        pt2 = project_3d(nx2, ny2, nz2)
+        
+        if i != 0:
+            pygame.draw.line(screen, color, center_on_screen(pt1), center_on_screen(pt2))
+        else:
+            pygame.draw.line(screen, color_bright, center_on_screen(pt1), center_on_screen(pt2))
+    
     pygame.draw.lines(screen, (255, 255, 255), True, screen_points)
 
 def draw_robot_outline(x, y, rotation, color):
@@ -100,8 +189,9 @@ def draw_robot_outline(x, y, rotation, color):
     for pt_raw in outline_points:
         new_x, new_y = rotate(pt_raw[0], pt_raw[1], rotation)
         pt = (new_x + x, new_y + y)
-        ny, nz = rotate(-camera_height, pt[1] + camera_y, camera_pitch_rot)
-        pt2 = project_3d(pt[0], ny, nz)
+        nx, ny = rotate(pt[0], pt[1], camera_rot)
+        ny, nz = rotate(-camera_height, ny + camera_y, camera_pitch_rot)
+        pt2 = project_3d(nx, ny, nz)
         screen_points.append(center_on_screen(pt2))
 
     pygame.draw.lines(screen, color, True, screen_points)
@@ -201,8 +291,17 @@ class station:
         draw_robot_outline(self.x, self.y, self.rot, color)
 
 stations = []
-for i in range(8):
+for i in range(6):
     stations.append(station())
+
+obstructions = []
+obstructions.append(obstruction())
+obstructions[0].x = -5
+obstructions[0].y = 3
+obstructions[0].rot = 1
+obstructions[0].width = 4
+obstructions[0].height = 2
+obstructions[0].depth = 5
 
 for s in stations:
     s.generate_pos()
@@ -297,8 +396,12 @@ def draw_robot_motor_info():
     wheel_visualization_pos[3] += speed_br * 0.4
 
 
-
-
+mousex_temp = 0
+mousey_temp = 0
+camera_rot_temp = 0
+old_pressed = [False, False, False]
+mouse_sensitivity = 0.75
+camera_move_speed = 0.05
 while not quitting:
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
@@ -356,8 +459,6 @@ while not quitting:
             if stations[chosen_target].rot > robot_rot:
                 clockwise_dist = stations[chosen_target].rot - robot_rot
 
-                print(clockwise_dist)
-
                 if clockwise_dist < pi:
                     rotation_dir = 1
                 else:
@@ -387,7 +488,6 @@ while not quitting:
 
     elif step == 3:
         # choose new station, in this case, just select next one in list, loop if needed
-        print("at station", chosen_target)
         chosen_target += 1
         if chosen_target == len(stations):
             chosen_target = 0
@@ -397,8 +497,35 @@ while not quitting:
 
 
 
+    # --------------- mouse and other input ----------
 
+    pressed = pygame.mouse.get_pressed(3)
+    
+    if pressed[0] and not old_pressed[0]:
+        mpos = pygame.mouse.get_pos()
+        mousex_temp = mpos[0]
+        mousey_temp = mpos[1]
+        camera_rot_temp = camera_rot
 
+    if pressed[0]:
+        mpos = pygame.mouse.get_pos()
+        camera_rot = camera_rot_temp + -((mousex_temp - mpos[0]) / 100) * mouse_sensitivity
+    
+    if camera_rot > 2 * pi:
+        camera_rot -= 2 * pi
+    if camera_rot < 0:
+        camera_rot += 2 * pi
+   
+    if pressed[2]:
+        camera_y = camera_y * (1 - camera_move_speed) + camera_y_top * camera_move_speed
+        camera_pitch_rot = camera_pitch_rot * (1 - camera_move_speed) + camera_pitch_rot_top * camera_move_speed
+        camera_height = camera_height * (1 - camera_move_speed) + camera_height_top * camera_move_speed
+    else:
+        camera_y = camera_y * (1 - camera_move_speed) + camera_y_rest * camera_move_speed
+        camera_pitch_rot = camera_pitch_rot * (1 - camera_move_speed) + camera_pitch_rot_rest * camera_move_speed
+        camera_height = camera_height * (1 - camera_move_speed) + camera_height_rest * camera_move_speed
+
+    old_pressed = pressed
 
     # --------------- rendering code -----------------
     screen.fill((0, 0, 0))
@@ -414,9 +541,9 @@ while not quitting:
             stations[i].render(STATION)
         else:
             stations[i].render(TARGET)
-
-    # debug
-    #draw_robot_outline(robot_tx, robot_ty, 0, DEBUG)
+    
+    for i in range(len(obstructions)):
+        obstructions[i].draw()
 
     pygame.display.flip()
     clock.tick(40) #40 fps
